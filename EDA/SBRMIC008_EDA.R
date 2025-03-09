@@ -2,6 +2,7 @@ library(magick)
 library(EBImage)
 library(stringr)
 library(dplyr)
+library(stringr)
 
 # Install BiocManager to install EBImage
 #install.packages("BiocManager", dependencies = TRUE)
@@ -21,10 +22,48 @@ library(dplyr)
 # 
 # numID = c()
 # 
+# patientInfo = data.frame(c())
+# 
+# extract = function(input)
+# {
+#   inputTemp = gsub(" ", "", input)
+#   colonPos = str_locate(inputTemp, ":")
+#   afterColon = substr(inputTemp, colonPos[1] + 1, nchar(inputTemp))
+#   
+#   return (afterColon)
+# }
+# 
 # for (i in 1:length(file_names))
 # {
 #   numID = c(numID, (str_extract(file_names[i], "(?<=OAS1_)\\d{4}")))
 #   sub = paste(file_names[i],"/PROCESSED/MPRAGE/T88_111", sep = "")
+#   
+#   textFile = readLines(paste0(file_names[i],"/OAS1_",numID[i],"_MR1.txt"))
+#   
+#   age_line = textFile[2]
+#   gender_line = textFile[3]
+#   educ_line = textFile[5]
+#   ses_line = textFile[6]
+#   cdr_line = textFile[7]
+#   mmse_line = textFile[8]
+#   etiv_line = textFile[10]
+#   asf_line = textFile[11]
+#   nwbv_line = textFile[12]
+#   print(i)
+#   
+#   age = as.numeric(extract(age_line))
+#   gender = extract(gender_line)
+#   educ = extract(educ_line)
+#   ses = extract(ses_line)
+#   cdr = extract(cdr_line)
+#   mmse = as.numeric(extract(mmse_line))
+#   etiv = as.numeric(extract(etiv_line))
+#   asf = as.numeric(extract(asf_line))
+#   nwbv = as.numeric(extract(nwbv_line))
+#   
+#   tempInfo = c(age, gender, educ, ses, cdr, mmse, etiv, asf, nwbv)
+#   
+#   patientInfo = rbind(patientInfo, tempInfo)
 # 
 #   front = paste(sub,"/OAS1_",numID[i],"_MR1_mpr_n4_anon_111_t88_gfc_cor_110.gif", sep = "")
 #   front2 = paste(sub,"/OAS1_",numID[i],"_MR1_mpr_n3_anon_111_t88_gfc_cor_110.gif", sep = "")
@@ -108,6 +147,10 @@ library(dplyr)
 # }
 # 
 # saveRDS(listOfPixels, "pixelsMatrix")
+# 
+# colnames(patientInfo) = c("age", "gender", "educ", "ses", "cdr", "mmse", "etiv", "asf", "nwbv")
+# 
+# write.csv(patientInfo, file = "F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/PatientInfo.csv")
 
 data = readRDS("pixelsMatrix")
 
