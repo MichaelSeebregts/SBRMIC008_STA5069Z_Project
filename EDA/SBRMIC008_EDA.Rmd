@@ -7,5 +7,100 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+library(magick)
+library(EBImage)
+library(stringr)
+library(dplyr)
+library(stringr)
+library(knitr)
+
+setwd("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/EDA")
+
 ```
 
+# 1: Introduction
+
+Alzheimer's accounts, which accounts for an estimated 60% - 80% of dementia cases, is particularly significant for people 65 and over (Alzheimer's Association, 2024). In 2011 the US census bureau approximated that 910 000 people aged 65 or older developed Alzheimer's in 2011 with an incidence rate of 0.4% for people aged 65-74, 3.2% for people aged 75 - 84 and 7.6% for people aged 86 and older. These incidence rates are projected to double by 2050, due to the increasing number of people aged 65 in the US (Alzheimer's Association, 2024). With alzheimers being so prevalent, being able to accurately predict early signs of dementia will allow early prevention steps to be taken in order to reduce the chance of the dementia worsening or remove it completely.
+
+Alzheimers is a type of brain disease that is characterized by damage to the neurons in the brain,  particularly those in the hippocampus which is responsible for thinking, talking and walking (Alzheimer's Association, 2024). While the symptoms are new to an individual which they impact, it is currently thought to begin over 20 years before the symptoms start. 
+
+Alzheimer's leads to significant changes to the brain. These changes include the accumulation of the protein beta-amyloid outside neurons, twisted strands of protein tau inside neurons, as well as inflammation and atrophy of brain tissue (Alzheimer’s Association, 2024). 
+
+This paper  explores the use of multivariate techniques on Magnetic Image Resonance images on individuals in order to predict Alzheimers. Based on the current research and information, the inflammation and atrophy of brain tissue may be recognisable by a sufficiently informed model. 
+
+# 2: Data Description
+
+The data set consists of 400 observations with 9 predictors along with the 3 brain scans and 1 predictor, being clinical dementia rating. The patient information is as follows: 
+
+1. SESSION ID
+2. AGE - age of patients
+3. M/F - whether patient is male or female
+4. HAND - dominant hand of the patient, in this case all patients are right handed
+5. EDUC - education level of the patient, education level ranges from 1, no formal education, to 6 being a graduate or professional degree
+6. SES - socio economic status of the patient, SES ranges from 1, very low socioeconomic status, to 7, very high socioeconomic status
+7. CDR - clinical dementia rating of the patient, the CDR scores have a range of 0, no dementia, 0.5, mild dementia, 1, moderate dementia and 2, severe dementia 
+8. MMSE - mini mental state examination (test scoring their memory, attention and problem solving). A MMSE score of 0-17 indicates severe cognitive impairment while 28 - 30 indicates normal cognitive function. 
+9. eTIV - estimated total volume of the skull 
+10. ASF - factor used to normalize brain measurements 
+11. nWBV - total brain volume, normalized for intracranial volume 
+The brain scans themselves have been normalized already so that brain scans for the front all have the same pixels, with the same being done for the side and top scans.
+
+This data was collected by each subject being aged between 18 - 96. For each subject, 3 or 4 individual T1-weighted MRI scans were obtained in a single scan session. All the subjects were right handed and are a mixture of men and women. 
+
+# 3: Analysis Approach
+
+The MRI scans for the 58th observation is: 
+
+![MRI Image]("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/Images/OAS1_0058_MR1_mpr_n4_anon_111_t88_gfc_cor_110.jpg")
+*figure 1: Front MRI Scan*
+
+![MRI Image]("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/Images/OAS1_0058_MR1_mpr_n4_anon_111_t88_gfc_sag_95.jpg")
+*figure 1: Side MRI Scan*
+
+![MRI Image]("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/Images/OAS1_0058_MR1_mpr_n4_anon_111_t88_gfc_tra_90.jpg")
+*figure 1: Top MRI Scan*
+
+Each individual has these same 3 MRI scans. 
+
+```{r eda, echo = FALSE}
+
+data = readRDS("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/pixelsMatrix")
+patientInfo = read.csv("patientInfo.csv")
+
+missingCDR = sum(is.na(patientInfo$cdr))
+
+remainingObs = length(patientInfo$cdr) - missingCDR
+
+noNA = na.omit(patientInfo$cdr)
+
+cdr0 = length(noNA[noNA == 0])
+cdr05 = length(noNA[noNA == 0.5])
+cdr1 = length(noNA[noNA == 1])
+cdr2 = length(noNA[noNA == 2])
+cdr3 = length(noNA[noNA == 3])
+
+
+
+cdrDataFrame = data.frame("CDR = NA" = missingCDR, "CDR = 0" = cdr0, "CDR = 0.5" = cdr05, "CDR = 1" = cdr1, "CDR = 2" = cdr2, "CDR = 3" = cdr3)
+
+kable(cdrDataFrame, caption = "Table 1: Table of number of indiviuals with different levels of CDR")
+
+boxplot(patientInfo$age)
+
+prob0 = cdr0/remainingObs
+prob05 = cdr05/remainingObs
+prob1 = cdr1/remainingObs
+prob2 = cdr2/remainingObs
+
+cdrProbDF = data.frame("CDR = 0" = prob0, "CDR = 0.5" = prob05, "CDR = 1" = prob1, "CDR = 2" = prob2)
+
+kable(cdrProbDF, caption = "Table 2: Table of the probability of indiviuals having different levels of CDR")
+
+```
+
+We can see that 176 of the patients do not have a CDR rating. These observations will need to be thrown out, leaving 224 observations. 
+
+# References
+
+Alzheimer's Association. 2024. *2024 Alzheimer’s disease facts and figures*. Available:[https://www.alz.org/getmedia/76e51bb6-c003-4d84-8019-e0779d8c4e8d/alzheimers-facts-and-figures.pdf][https://www.alz.org/getmedia/76e51bb6-c003-4d84-8019-e0779d8c4e8d/alzheimers-facts-and-figures.pdf]. [2024, 7 March]

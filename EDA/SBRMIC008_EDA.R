@@ -13,7 +13,6 @@ library(stringr)
 # These matrices of pixels were normalised and saved to a list denoting if they are top, front, side
 # This list was written to files in order to not have to read in the raw images everytime. 
 
-# listOfFiles = data.frame(c())
 # listOfPixels = list()
 # 
 # main = "F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/Data/Oasis/"
@@ -29,17 +28,21 @@ library(stringr)
 #   inputTemp = gsub(" ", "", input)
 #   colonPos = str_locate(inputTemp, ":")
 #   afterColon = substr(inputTemp, colonPos[1] + 1, nchar(inputTemp))
-#   
+# 
 #   return (afterColon)
 # }
 # 
-# for (i in 1:length(file_names))
+# len = length(file_names)
+# 
+# listOfFiles = data.frame("Front" = character(len), "Side" = character(len), "Top" = character(len))
+# 
+# for (i in 1:len)
 # {
 #   numID = c(numID, (str_extract(file_names[i], "(?<=OAS1_)\\d{4}")))
 #   sub = paste(file_names[i],"/PROCESSED/MPRAGE/T88_111", sep = "")
-#   
+# 
 #   textFile = readLines(paste0(file_names[i],"/OAS1_",numID[i],"_MR1.txt"))
-#   
+# 
 #   age_line = textFile[2]
 #   gender_line = textFile[3]
 #   educ_line = textFile[5]
@@ -49,8 +52,7 @@ library(stringr)
 #   etiv_line = textFile[10]
 #   asf_line = textFile[11]
 #   nwbv_line = textFile[12]
-#   print(i)
-#   
+# 
 #   age = as.numeric(extract(age_line))
 #   gender = extract(gender_line)
 #   educ = extract(educ_line)
@@ -60,38 +62,61 @@ library(stringr)
 #   etiv = as.numeric(extract(etiv_line))
 #   asf = as.numeric(extract(asf_line))
 #   nwbv = as.numeric(extract(nwbv_line))
-#   
+# 
 #   tempInfo = c(age, gender, educ, ses, cdr, mmse, etiv, asf, nwbv)
-#   
+# 
 #   patientInfo = rbind(patientInfo, tempInfo)
+#   
+#   tempObs = c()
 # 
 #   front = paste(sub,"/OAS1_",numID[i],"_MR1_mpr_n4_anon_111_t88_gfc_cor_110.gif", sep = "")
 #   front2 = paste(sub,"/OAS1_",numID[i],"_MR1_mpr_n3_anon_111_t88_gfc_cor_110.gif", sep = "")
 #   front3 = paste(sub,"/OAS1_",numID[i],"_MR1_mpr_n6_anon_111_t88_gfc_cor_110.gif", sep = "")
+#   front4 = paste(sub,"/OAS1_",numID[i],"_MR1_mpr_n5_anon_111_t88_gfc_cor_110.gif", sep = "")
+#   
+#   print(listOfFiles[nrow(listOfFiles), 1])
+#   
 #   if (file.exists(front))
 #   {
 #     side = paste(sub,"/OAS1_",numID[i],"_MR1_mpr_n4_anon_111_t88_gfc_sag_95.gif", sep = "")
 #     top = paste(sub,"/OAS1_",numID[i],"_MR1_mpr_n4_anon_111_t88_gfc_tra_90.gif", sep = "")
 #     tempObs = c(front, side, top)
-#     listOfFiles = rbind(listOfFiles, tempObs)
-#   } else if (file.exists(front2))
+#     listOfFiles[i, ] = tempObs
+# 
+#   }
+# 
+#   if (file.exists(front2))
 #   {
 #     side = paste(sub,"/OAS1_",numID[i],"_MR1_mpr_n3_anon_111_t88_gfc_sag_95.gif", sep = "")
 #     top = paste(sub,"/OAS1_",numID[i],"_MR1_mpr_n3_anon_111_t88_gfc_tra_90.gif", sep = "")
 #     tempObs = c(front2, side, top)
-#     listOfFiles = rbind(listOfFiles, tempObs)
-#   }else if (file.exists(front3))
+#     listOfFiles[i, ] = tempObs
+# 
+#   }
+# 
+#   if (file.exists(front3))
 #   {
 #     side = paste(sub,"/OAS1_",numID[i],"_MR1_mpr_n6_anon_111_t88_gfc_sag_95.gif", sep = "")
 #     top = paste(sub,"/OAS1_",numID[i],"_MR1_mpr_n6_anon_111_t88_gfc_tra_90.gif", sep = "")
 #     tempObs = c(front3, side, top)
-#     listOfFiles = rbind(listOfFiles, tempObs)
+#     listOfFiles[i, ] = tempObs
+# 
 #   }
+#   
+#   if (file.exists(front4))
+#   {
+#     side = paste(sub,"/OAS1_",numID[i],"_MR1_mpr_n5_anon_111_t88_gfc_sag_95.gif", sep = "")
+#     top = paste(sub,"/OAS1_",numID[i],"_MR1_mpr_n5_anon_111_t88_gfc_tra_90.gif", sep = "")
+#     tempObs = c(front4, side, top)
+#     listOfFiles[i, ] = tempObs
+#     
+#   }
+# 
 # 
 # }
 # image_list = list()
 # 
-# for (j in 1:length(file_names))
+# for (j in 1:dim(listOfFiles)[1])
 # {
 #   imgFront = image_read(listOfFiles[j, 1])
 #   imgFront = image_convert(imgFront, colorspace = "gray")
@@ -105,6 +130,7 @@ library(stringr)
 #   imgTop = image_convert(imgTop, colorspace = "gray")
 #   imgTop_dat = image_data(imgTop)
 # 
+# 
 #   heightFront = dim(imgFront_dat)[3]
 #   widthFront = dim(imgFront_dat)[2]
 # 
@@ -117,6 +143,7 @@ library(stringr)
 #   full_imgFront_dat = matrix(as.numeric(imgFront_dat[,,1]), ncol = 1, byrow = TRUE)
 #   full_imgSide_dat = matrix(as.numeric(imgSide_dat[,,1]), ncol = 1, byrow = TRUE)
 #   full_imgTop_dat = matrix(as.numeric(imgTop_dat[,,1]), ncol = 1, byrow = TRUE)
+# 
 # 
 #   for (q in 2:heightFront)
 #   {
@@ -153,7 +180,24 @@ library(stringr)
 # write.csv(patientInfo, file = "F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/PatientInfo.csv")
 
 data = readRDS("pixelsMatrix")
+patientInfo = read.csv("patientInfo.csv")
 
+boxplot(patientInfo$age)
+
+boxplot(patientInfo$mmse)
+
+boxplot(patientInfo$cdr)
+
+sum(is.na(patientInfo$cdr))
+
+head(patientInfo$cdr)
+
+typeof(patientInfo$cdr[3])
+
+noNA = na.omit(patientInfo$cdr)
+
+noAlz = length(patientInfo$cdr[patientInfo$cdr == 1])
+noAlz
 # reconstructed = Image(norm_full_img_dat, colormode = Grayscale)
 # 
 # display(reconstructed)
