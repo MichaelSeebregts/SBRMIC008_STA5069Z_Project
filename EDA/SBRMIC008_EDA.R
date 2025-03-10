@@ -3,6 +3,7 @@ library(EBImage)
 library(stringr)
 library(dplyr)
 library(stringr)
+library(curl)
 
 # Install BiocManager to install EBImage
 #install.packages("BiocManager", dependencies = TRUE)
@@ -179,22 +180,12 @@ library(stringr)
 # 
 # write.csv(patientInfo, file = "F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/PatientInfo.csv")
 
-data = readRDS("pixelsMatrix")
-patientInfo = read.csv("patientInfo.csv")
 
-boxplot(patientInfo$age)
 
-boxplot(patientInfo$mmse)
+pixelsMatrix = readRDS("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/pixelsMatrix")
+patientInfo = read.csv("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/PatientInfo.csv")
 
-boxplot(patientInfo$cdr)
-
-sum(is.na(patientInfo$cdr))
-
-head(patientInfo$cdr)
-
-typeof(patientInfo$cdr[3])
-
-noNA = na.omit(patientInfo$cdr)
+noNA = patientInfo %>% filter(!is.na(cdr))
 
 noAlz = length(patientInfo$cdr[patientInfo$cdr == 1])
 noAlz

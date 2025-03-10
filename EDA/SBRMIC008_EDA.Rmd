@@ -14,6 +14,8 @@ library(stringr)
 library(dplyr)
 library(stringr)
 library(knitr)
+library(curl)
+library(kableExtra)
 
 setwd("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/EDA")
 
@@ -52,54 +54,80 @@ This data was collected by each subject being aged between 18 - 96. For each sub
 
 The MRI scans for the 58th observation is: 
 
-![MRI Image]("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/Images/OAS1_0058_MR1_mpr_n4_anon_111_t88_gfc_cor_110.jpg")
-*figure 1: Front MRI Scan*
+```{r mri, echo = FALSE, fig.show = "hold", fig.align = "center", out.height="30%", out.width="30%", fig.cap = "Figure 1: Front, Side and Top MRI Scans for Patient 58"}
 
-![MRI Image]("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/Images/OAS1_0058_MR1_mpr_n4_anon_111_t88_gfc_sag_95.jpg")
-*figure 1: Side MRI Scan*
-
-![MRI Image]("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/Images/OAS1_0058_MR1_mpr_n4_anon_111_t88_gfc_tra_90.jpg")
-*figure 1: Top MRI Scan*
+knitr::include_graphics(c("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/Images/OAS1_0058_MR1_mpr_n4_anon_111_t88_gfc_cor_110.jpg", "F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/Images/OAS1_0058_MR1_mpr_n4_anon_111_t88_gfc_sag_95.jpg", "F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/Images/OAS1_0058_MR1_mpr_n4_anon_111_t88_gfc_tra_90.jpg"))
+```
 
 Each individual has these same 3 MRI scans. 
 
 ```{r eda, echo = FALSE}
 
-data = readRDS("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/pixelsMatrix")
-patientInfo = read.csv("patientInfo.csv")
+pixelsMatrix = readRDS("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/pixelsMatrix")
+patientInfo = read.csv("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/PatientInfo.csv")
 
 missingCDR = sum(is.na(patientInfo$cdr))
 
 remainingObs = length(patientInfo$cdr) - missingCDR
 
-noNA = na.omit(patientInfo$cdr)
+noNA = patientInfo %>% filter(!is.na(cdr))
 
-cdr0 = length(noNA[noNA == 0])
-cdr05 = length(noNA[noNA == 0.5])
-cdr1 = length(noNA[noNA == 1])
-cdr2 = length(noNA[noNA == 2])
-cdr3 = length(noNA[noNA == 3])
-
+cdr0 = length(noNA$cdr[noNA$cdr == 0])
+cdr05 = length(noNA$cdr[noNA$cdr == 0.5])
+cdr1 = length(noNA$cdr[noNA$cdr == 1])
+cdr2 = length(noNA$cdr[noNA$cdr == 2])
 
 
-cdrDataFrame = data.frame("CDR = NA" = missingCDR, "CDR = 0" = cdr0, "CDR = 0.5" = cdr05, "CDR = 1" = cdr1, "CDR = 2" = cdr2, "CDR = 3" = cdr3)
+cdrDataFrame = data.frame("CDR: NA" = missingCDR, "CDR: 0" = cdr0, "CDR = 0.5" = cdr05, "CDR: 1" = cdr1, "CDR: 2" = cdr2)
 
-kable(cdrDataFrame, caption = "Table 1: Table of number of indiviuals with different levels of CDR")
-
-boxplot(patientInfo$age)
+kable(cdrDataFrame, caption = "Table 1: Table of number of indiviuals with different levels of CDR")%>%
+  kable_styling(position = "center")
 
 prob0 = cdr0/remainingObs
 prob05 = cdr05/remainingObs
 prob1 = cdr1/remainingObs
 prob2 = cdr2/remainingObs
 
-cdrProbDF = data.frame("CDR = 0" = prob0, "CDR = 0.5" = prob05, "CDR = 1" = prob1, "CDR = 2" = prob2)
+cdrProbDF = data.frame("CDR: 0" = prob0, "CDR: 0.5" = prob05, "CDR: 1" = prob1, "CDR: 2" = prob2)
 
-kable(cdrProbDF, caption = "Table 2: Table of the probability of indiviuals having different levels of CDR")
+kable(cdrProbDF, caption = "Table 2: Table of the probability of indiviuals having different levels of CDR")%>%
+  kable_styling(position = "center")
 
 ```
 
 We can see that 176 of the patients do not have a CDR rating. These observations will need to be thrown out, leaving 224 observations. 
+
+```{r edaCont, echo = FALSE}
+
+boxplot(noNA$age)
+boxplot(noNA$educ)
+boxplot(noNA$ses)
+boxplot(noNA$mmse)
+
+hist(noNA$etiv)
+hist(noNA$nwbv)
+hist(noNA$asf)
+
+noMale = sum(noNA$gender == "Male")
+noFemale = sum(noNA$gender == "Female")
+
+genderDF = data.frame("Males" = noMale, "Females" = noFemale)
+
+kable(genderDF, caption = "Table 3: Table of number of male and female patients")%>%
+  kable_styling(position = "center")
+
+malesWithAlzheimers = length(noNA$cdr[noNA$cdr != 0 & noNA$gender == "Male"])
+malesWithoutAlzheimers = length(noNA$cdr[noNA$cdr == 0 & noNA$gender == "Male"])
+
+femalesWithAlzheimers = length(noNA$cdr[noNA$cdr != 0 & noNA$gender == "Female"])
+femalesWithoutAlzheimers = length(noNA$cdr[noNA$cdr == 0 & noNA$gender == "Female"])
+
+genderWithDiagDF = data.frame("Males with Alzheimers" = malesWithAlzheimers, "Males without Alzheimers" = malesWithoutAlzheimers, "Females with Alzheimers" = femalesWithAlzheimers, "Females without Alzheimers" = femalesWithoutAlzheimers)
+
+kable(genderWithDiagDF, caption = "Table 4: Table of number of male and female patients with or without alzheimers diagnosis")%>%
+  kable_styling(position = "center")
+
+```
 
 # References
 
