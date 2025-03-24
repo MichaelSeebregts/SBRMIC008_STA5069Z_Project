@@ -1,0 +1,1031 @@
+---
+title: "SBRMIC008_Report"
+author: "Michael Seebregts"
+date: "2025-03-13"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      warning = FALSE, 
+                      message = FALSE,
+                      fig.device = "png")
+
+library(magick)
+library(EBImage)
+library(stringr)
+library(dplyr)
+library(stringr)
+library(knitr)
+library(curl)
+library(kableExtra)
+library(cowplot)
+library(ggpubr)
+library(dbscan)
+library(plotly)
+library(ggplot2)
+library(reticulate)
+use_condaenv("py310", required = TRUE)
+library(tensorflow)
+library(keras)
+library(lle)
+set.seed(56)
+
+```
+# 1: Introduction
+
+Alzheimer's disease, which accounts for an estimated 60% - 80% of dementia cases, is particularly significant for people 65 and over (Alzheimer's Association, 2024). The US census bureau approximated that 910 000 people aged 65 or older developed Alzheimer's in 2011 with an incidence rate of 0.4% for people aged 65-74, 3.2% for people aged 75 - 84 and 7.6% for people aged 86 and older. These incidence rates are projected to double by 2050, due to the increasing number of people aged 65 in the US (Alzheimer's Association, 2024). Women are affected more by Alzheimers than men, with almost two-thirds of Americans with Alzheimers being women. Age is one of the greatest risk factors for Alzheimers, and women live on average longer than men. Studies have found that Alzheimers does not affect women more than men (Alzheimer's Association, 2024). Therefore the higher prevalence of Alzheimers is due to living longer. 
+
+With alzheimers being so prevalent, being able to accurately predict early signs of Alzheimer's will allow early prevention steps to be taken in order to potentially slow or stop the progression of this disease.  
+
+Alzheimers is a type of brain disease that is characterized by damage to the neurons in the brain,  particularly those in the hippocampus which is responsible for thinking, talking and walking (Alzheimer's Association, 2024). Alzheimers is believed to begin over 20 years before the symptoms appear. As the disease progresses, there are significant changes to the brain. These changes include the accumulation of the protein beta-amyloid outside neurons, twisted strands of protein tau inside neurons, as well as inflammation and atrophy of brain tissue (Alzheimer’s Association, 2024). 
+
+Structural MRI markers are a part of the clinical assessment in order to determine if someone has Alzheimer's (Frisoni GB, et al, 2010). These MRI markers provide people with more accurate and precise diagnosis, and allow for the progression of Alzheimers to be measured. According to current research, particularly powerful markers are the rates of whole brain and hippocampal atrophy (Frisoni GB, et al, 2010).
+
+This paper  explores whether multivariate techniques can be applied to Magnetic Image Resonance images on individuals in order to effectively predict Alzheimers. Based on the current research and information, the inflammation and atrophy of brain tissue may be recognisable by a sufficiently informed model. 
+ 
+# 2: Data Description
+
+The data set consists of 400 observations with 9 predictors along with the 3 brain scans and 1 predictor, being clinical dementia rating. The patient information is as follows: 
+
+1. SESSION ID
+2. AGE - age of patients
+3. M/F - whether patient is male or female
+4. HAND - dominant hand of the patient, in this case all patients are right handed
+5. EDUC - education level of the patient, education level ranges from 1, no formal education, to 5 being a graduate or professional degree
+6. SES - socio-economic status of the patient, SES ranges from 1, very low socioeconomic status, to 5, very high socioeconomic status
+7. CDR - clinical dementia rating of the patient, the CDR scores have a range of 0, no dementia, 0.5, mild dementia, 1, moderate dementia and 2, severe dementia 
+8. MMSE - mini mental state examination (test scoring their memory, attention and problem solving). A MMSE score of 0-17 indicates severe cognitive impairment while 28 - 30 indicates normal cognitive function. 
+9. eTIV - estimated total volume of the skull 
+10. ASF - factor used to normalize brain measurements 
+11. nWBV - total brain volume, normalized for intracranial volume 
+The brain scans themselves have been normalized already so that brain scans for the front all have the same pixels, with the same being done for the side and top scans.
+
+The brain scans themselves have been normalized already so that brain scans for the front all have the same pixels, with the same being done for the side and top scans.
+
+This data was collected by each subject being aged between 18 - 96. For each subject, 3 or 4 individual T1-weighted MRI scans were obtained in a single scan session. All the subjects were right handed and are a mixture of men and women. The data is currently hosted on WashU Medicine, titled OASIS1 Dataset (Marus, et al, 2010).  
+
+# 3: Analysis Approach
+
+The response variable is the CDR rating which will either be 0, 0.5 or 1, after combining levels 1 and 2. The main predictor will be the MRI scans of the individuals, but other predictors such as age and MMSE score may be used as well. The MRI scans for the 58th observation is: 
+
+```{r mri, echo = FALSE, fig.show = "hold", fig.align = "center", out.height="30%", out.width="30%", fig.cap = "Front, Side and Top MRI Scans for Patient 58"}
+
+knitr::include_graphics(c("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/Images/OAS1_0058_MR1_mpr_n4_anon_111_t88_gfc_cor_110.jpg", "F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/Images/OAS1_0058_MR1_mpr_n4_anon_111_t88_gfc_sag_95.jpg", "F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/Images/OAS1_0058_MR1_mpr_n4_anon_111_t88_gfc_tra_90.jpg"))
+```
+
+Each individual has these same 3 MRI scans (Marus, et al, 2010).
+
+```{r eda, echo = FALSE}
+
+pixelsMatrixRaw = readRDS("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/pixelsMatrix")
+patientInfoRaw = read.csv("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/PatientInfo.csv")
+
+missingCDR = sum(is.na(patientInfoRaw$cdr))
+
+remainingObs = length(patientInfoRaw$cdr) - missingCDR
+
+noNA = patientInfoRaw %>% filter(!is.na(cdr))
+
+cdr0 = length(noNA$cdr[noNA$cdr == 0])
+cdr05 = length(noNA$cdr[noNA$cdr == 0.5])
+cdr1 = length(noNA$cdr[noNA$cdr == 1])
+cdr2 = length(noNA$cdr[noNA$cdr == 2])
+
+
+cdrDataFrame = data.frame("CDR = NA" = missingCDR, "CDR = 0" = cdr0, "CDR = 0.5" = cdr05, "CDR = 1" = cdr1, "CDR = 2" = cdr2)
+
+kable(cdrDataFrame, caption = "Table of number of indiviuals with different levels of CDR", col.names = c("CDR = NA", "CDR = 0", "CDR = 0.5", "CDR = 1", "CDR = 2") )%>%
+  kable_styling(position = "center")
+```
+
+We can see that 176 of the patients do not have a CDR rating. These observations will need to be thrown out, leaving 224 observations. 
+
+For a CDR level of 2, there are only 2 observations in this category. This lack of data may not allow a model to effectively predict this level. CDR level of 2 will be therefore be combined with CDR level of 1.
+
+```{r eda2, echo = FALSE}
+prob0 = cdr0/remainingObs
+prob05 = cdr05/remainingObs
+prob1 = (cdr1+cdr2)/remainingObs
+
+
+cdrProbDF = data.frame("CDR 0" = prob0, "CDR 0.5" = prob05, "CDR 1" = prob1)
+
+kable(cdrProbDF, caption = "Table of the probability of indiviuals having different levels of CDR", col.names = c("CDR = 0", "CDR = 0.5", "CDR = 1"))%>%
+  kable_styling(position = "center")
+```
+
+Can see that around 60% of observations have no Alzheimers, 30% have mild Alzheimers and 10% have moderate Alzheimers. 
+
+# 4: Methodology
+
+The goal of this paper is to identify patterns in brain scans that correlate with the 3 different CDR scores. To this extent, dimensionality reduction techniques will be used, along with feature extraction models and clustering methods in order to extract information from the MRI scans. 
+
+Due to the focus being on feature extraction and MRI scans being in black and white, the images were grey scaled in order to reduce the complexity of the data. Greyscaling was done via the Magick package in R and converted into pixel values. These pixel values were normalised to be between 0 and 1, with 1 being white, 0 being black and any number in between being the amount of white contained in the pixel. 
+
+The OASIS1 Dataset uploads their images in a normalized format already and so the images did not require any extra normalization and could be converted into a single vector of pixel values. All front scans have size 176x176, all side scans have size 176x208 and all top scans have size 208x176.
+
+PCA was applied in order to retain the most important information, with the first few principal components being selected based on the explained variance. PCA automatically identifies the principal components of variation in MRI scans and so these components may correspond to the underlying structural changes in the brain that are correlated with Alzheimers. However, PCA looks for linear combinations of features to explain the variance. The structural differences in MRI scans may be nonlinear and so PCA may not capture the full complexity of the scans. PCA is also better for larger datasets and so performing PCA with few scans can make the principal components sensitive to noise and outliers. 
+
+In order to reduce some of these issues, LLE was also used to reduce dimensions. LLE is effective at maintaining the local structure of the data so that points in the high dimensional space remain close in the lower dimensional embedding. This is important for MRI scans in order to keep the local structure of the brain in the lower dimension. LLE also allows for non linear relationships and so can capture the more complex patterns inside the brian. The issues with LLE is that it does not keep the global structure of the brain  which can be problematic as we try and investigate the differences in the entire brain of an individual. LLE is also very impacted by the choice of neighborhood size which can lead to noise being introduced or not capturing the underlying trends. 
+
+The use of autoencoders was investigated as well since autoencoders are also capable of nonlinear dimension reduction which should be able to capture more meaningful representations in the data compared to PCA. Autoencoders are especially useful for anomaly detection as the reconstruction error will be high if there is an anomaly in the scan. Auto encoders offer a lot of flexibility in the model design and can then be tailored to the MRI scans. However, auto encoders are prone to overfitting if the network architecture is too complex, but may also not capture sufficient variability in the scans if it isnt sufficiently complex. Auto encoders also have larger data requirements in order to fit the model. 2 Auto Encoders were used, both with 5 hidden layers, with the number of nodes being 2056, 1024 and 128 in the bottleneck. The first auto encoder used linear activation functions for the 2056 nodes and sigmoid for the rest. The second auto encoder used Relu for all layers. These 2 activation functions were used separately on the front, top and side scans separately and then on the combined scans as well. 
+
+Convolutional Auto Encoder (CAE) was an extension of the normal auto encoder which was used because convolutional networks are generally used in image analysis due to the usage of the filters, such as filters for edge detection. The use of the filters can increase the ability of CAE’s to pick up on anomalies in the brain. CAE’s also carry the same risks as normal autoencoders of the risk of overfitting and too simple architectures. The CAE used 3 encoding layers, with 32, 16 and 4 filters. The kernel was 3x3 for the first 2 layers and 2x2 for the third layer. Max pooling was used between each filter. The third max pooling layer was used as the bottleneck and was decoded using the same structure as before. The activation functions were linear for the 32 filter layers and Relu for the rest. The CAE was used separately for front, top and side scans and then the combined scans as well. 
+
+After applying the dimension reduction, Kmeans was applied to the reduced dimensions in order to see if the clusters will be able to group the various CDR levels. K-means has been used in many MRI scans due the the speed and ability for it to differentiate brain tissue and diagnose neurodegenerative diseases. K means does have the disadvantage of having to define the number of clusters beforehand, but 2 clusters for CDR = 0 or CDR > 0 or 3 clusters for CDR = 0, CDR = 0.5 and CDR = 1 seems like likely candidates. K-means also struggles to capture spatial information which can lead to segmentation errors as well as struggles to deal with non-spherical shaped clusters. 
+
+DBScan is able to detect arbitrary shaped clusters, doesnt need to predefine the number of clusters and can detect dense regions in the brain scans, such as gray matter in the brain or tumors. DBScan is however highly sensitive to the epsilon and minimum points chosen and assumes that clusters have similar density, which may not always be the case due to varying regions of the brain. Thus DBScan was used as well to cluster the reduced dimensions. 
+
+# 5: Results
+
+## 5.1: LLE on Front MRI Scans
+
+```{r LLE, echo = FALSE, fig.height=4, fig.width=4, results='asis'}
+
+set.seed(56)
+obsNotNA = which(!is.na(patientInfoRaw$cdr))
+
+patientInfo = patientInfoRaw[obsNotNA, ]
+
+imagesWithNACDR = sprintf("%04d", obsNotNA)
+
+# Removing 2 cdr and grouping it with 1 cdr
+patientInfo$cdr[patientInfo$cdr == 2] = 1
+
+
+front = paste0("image_",imagesWithNACDR, "_front")
+top = paste0("image_",imagesWithNACDR, "_top")
+side = paste0("image_",imagesWithNACDR, "_side")
+
+pixelsMatrix = list()
+
+for (i in 1:length(obsNotNA))
+{
+  tempFront = front[i]
+  tempTop = top[i]
+  tempSide = side[i]
+  
+  pixelsMatrix[[tempFront]] = pixelsMatrixRaw[[tempFront]]
+  pixelsMatrix[[tempSide]] = pixelsMatrixRaw[[tempSide]]
+  pixelsMatrix[[tempTop]] = pixelsMatrixRaw[[tempTop]]
+  
+}
+
+flatPixels = lapply(pixelsMatrix, c)
+
+flatFront = matrix(flatPixels[["image_0001_front"]], nrow = 1)
+flatTop = matrix(flatPixels[["image_0001_top"]], nrow = 1)
+flatSide = matrix(flatPixels[["image_0001_side"]], nrow = 1)
+
+
+for (j in 2:length(obsNotNA))
+{
+  
+  flatFront = rbind(flatFront, t(flatPixels[[front[j]]]))
+  flatTop = rbind(flatTop, t(flatPixels[[top[j]]]))
+  flatSide = rbind(flatSide, t(flatPixels[[side[j]]]))
+}
+
+frontDF = data.frame(flatFront, cdr = as.factor(patientInfo$cdr))
+topDF = data.frame(flatTop, cdr = as.factor(patientInfo$cdr))
+sideDF = data.frame(flatSide, cdr = as.factor(patientInfo$cdr))
+
+# LLE Front Scans
+
+invisible(capture.output(
+  lleResult <- lle(X = flatFront, m = 70, k = 30)
+))
+lleComp = lleResult$Y
+
+kmeansLLE = kmeans(lleComp, centers = 3)
+dfLLE = data.frame("Clusters" = kmeansLLE$cluster-1, "CDR" = patientInfo$cdr)
+kmeans3LLE = kable(table(dfLLE), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"),
+                   booktabs = TRUE)
+
+kmeansLLE2 = kmeans(lleComp, centers = 2)
+dfLLE2 = data.frame("Clusters" = kmeansLLE2$cluster-1, "CDR" = patientInfo$cdr)
+kmeans2LLE = kable(table(dfLLE2), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+optLLE = optics(lleComp, minPts = 50)
+png("LLEReachability.png")
+plot(optLLE, main = "Reachbility plot for LLE DBScan")
+dev.off()
+
+dbscanLLE = extractDBSCAN(optLLE, eps_cl = 10)
+LLEDBScanDF = data.frame("Clusters" = dbscanLLE$cluster, "CDR" = patientInfo$cdr)
+DBScanLLE = kable(table(LLEDBScanDF), format = "latex", 
+                   col.names = c("Cluster", "CDR = 0", "CDR = 0.5", "CDR = 1"),
+                   booktabs = TRUE)
+
+LLETable = c(
+  "\\begin{table}[h] \\centering",
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeans3LLE,        # KMeans Clustering with 3 Clusters
+  "\\caption{Kmeans Clustering with 3 Clusters for LLE on Front MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeans2LLE,        # KMeans Clustering with 2 Clusters
+  "\\caption{Kmeans Clustering with 2 Clusters for LLE on Front MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  DBScanLLE,        # DBScan Clustering
+  "\\caption{DBScan Clustering for LLE on Front MRI Scans}",
+  "\\end{minipage}",
+  "\\end{table}"
+)
+
+writeLines(LLETable, "LLE_Front_clustering_tables.tex")
+```
+
+\input{LLE_Front_clustering_tables.tex}
+
+## 5.2: LLE on Top MRI Scans
+```{r lleTop, echo = FALSE, fig.height=4, fig.width=4, results='asis'}
+# LLE Top Scans
+set.seed(56)
+invisible(capture.output(
+  lleResultTop <- lle(X = flatTop, m = 70, k = 30)
+))
+lleCompTop = lleResultTop$Y
+
+kmeansLLETop3 = kmeans(lleCompTop, centers = 3)
+dfLLE3Top = data.frame("Clusters" = kmeansLLETop3$cluster-1, "CDR" = patientInfo$cdr)
+kmeansTop3LLE = kable(table(dfLLE3Top), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"),
+                   booktabs = TRUE)
+
+kmeansLLETop2 = kmeans(lleCompTop, centers = 2)
+dfLLETop2 = data.frame("Clusters" = kmeansLLETop2$cluster-1, "CDR" = patientInfo$cdr)
+kmeansTop2LLE = kable(table(dfLLETop2), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+optLLETop = optics(lleCompTop, minPts = 50)
+png("LLETopReachability.png")
+plot(optLLETop, main = "Reachbility plot for LLE DBScan")
+dev.off()
+
+dbscanLLETop = extractDBSCAN(optLLETop, eps_cl = 10)
+LLEDBScanDFTop = data.frame("Clusters" = dbscanLLETop$cluster, "CDR" = patientInfo$cdr)
+DBScanLLETop = kable(table(LLEDBScanDFTop), format = "latex", 
+                   col.names = c("Cluster", "CDR = 0", "CDR = 0.5", "CDR = 1"),
+                   booktabs = TRUE)
+
+LLETableTop = c(
+  "\\begin{table}[h] \\centering",
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeansTop3LLE,        # KMeans Clustering with 3 Clusters
+  "\\caption{Kmeans Clustering with 3 Clusters for LLE on Top MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeansTop2LLE,        # KMeans Clustering with 2 Clusters
+  "\\caption{Kmeans Clustering with 2 Clusters for LLE on Top MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  DBScanLLETop,        # DBScan Clustering
+  "\\caption{DBScan Clustering for LLE on Top MRI Scans}",
+  "\\end{minipage}",
+  "\\end{table}"
+)
+
+writeLines(LLETableTop, "LLE_Top_clustering_tables.tex")
+```
+
+\input{LLE_Top_clustering_tables.tex}
+
+## 5.3: LLE on Side MRI Scans
+```{r lleSide, echo = FALSE, fig.height=4, fig.width=4, results='asis'}
+# LLE Side Scans
+set.seed(56)
+invisible(capture.output(
+  lleSideResult <- lle(X = flatSide, m = 70, k = 30)
+))
+lleCompSide = lleSideResult$Y
+
+kmeansLLESide = kmeans(lleCompSide, centers = 3)
+dfLLESide = data.frame("Clusters" = kmeansLLESide$cluster-1, "CDR" = patientInfo$cdr)
+kmeansSide3LLE = kable(table(dfLLESide), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"),
+                   booktabs = TRUE)
+
+kmeansLLE2Side = kmeans(lleCompSide, centers = 2)
+dfLLE2Side = data.frame("Clusters" = kmeansLLE2Side$cluster-1, "CDR" = patientInfo$cdr)
+kmeans2LLESide = kable(table(dfLLE2Side), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+optLLESide = optics(lleCompSide, minPts = 50)
+png("LLESideReachability.png")
+plot(optLLESide, main = "Reachbility plot for LLE DBScan")
+dev.off()
+
+dbscanLLESide = extractDBSCAN(optLLESide, eps_cl = 10)
+LLEDBScanDFSide = data.frame("Clusters" = dbscanLLESide$cluster, "CDR" = patientInfo$cdr)
+DBScanLLESide = kable(table(LLEDBScanDFSide), format = "latex", 
+                   col.names = c("Cluster", "CDR = 0", "CDR = 0.5", "CDR = 1"),
+                   booktabs = TRUE)
+
+LLESideTable = c(
+  "\\begin{table}[h] \\centering",
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeansSide3LLE,        # KMeans Clustering with 3 Clusters
+  "\\caption{Kmeans Clustering with 3 Clusters for LLE on Side MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeans2LLESide,        # KMeans Clustering with 2 Clusters
+  "\\caption{Kmeans Clustering with 2 Clusters for LLE on Side MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  DBScanLLESide,        # DBScan Clustering
+  "\\caption{DBScan Clustering for LLE on Side MRI Scans}",
+  "\\end{minipage}",
+  "\\end{table}"
+)
+
+writeLines(LLESideTable, "LLE_Side_clustering_tables.tex")
+
+```
+
+\input{LLE_Side_clustering_tables.tex}
+
+Can see from the tables that the clusters are not able to differentiate between different levels of CDR after performing dimension reduction using LLE. The CDR levels just seem to be divided between each cluster somewhat equally, with 1 cluster sometimes taking the majority of the points. The LLE used 30 neighbors and 70 dimensions, both of which were informed from previous studies.  
+
+## 5.4: Auto Encoder on Front MRI Scans
+
+```{r autoencoder, echo = FALSE, fig.height=4, fig.width=4, results='asis'}
+# Auto Encoder for Front Scans
+set.seed(56)
+modelFront = keras_model_sequential() %>% 
+  layer_dense(units = 2056, activation = "linear", input_shape = ncol(flatFront)) %>% 
+  layer_dense(units = 1024, activation = "sigmoid") %>% 
+  layer_dense(units = 128, activation = "sigmoid", name = "bottleneck") %>% 
+  layer_dense(units = 1024, activation = "sigmoid") %>% 
+  layer_dense(units = 2056, activation = "linear") %>% 
+  layer_dense(units = ncol(flatFront))
+
+modelFront %>% compile(
+  loss = "mse", 
+  optimizer = "adam"
+)
+
+modelFront %>% fit(x = flatFront, 
+              y = flatFront, 
+              epochs = 25, 
+              batch_size = 128, 
+              validation_split = 0.2, 
+              verbose = 0)
+
+modelFront2 = keras_model_sequential() %>% 
+  layer_dense(units = 2056, activation = "relu", input_shape = ncol(flatFront)) %>% 
+  layer_dense(units = 1024, activation = "relu") %>% 
+  layer_dense(units = 128, activation = "relu", name = "bottleneck") %>% 
+  layer_dense(units = 1024, activation = "relu") %>% 
+  layer_dense(units = 2056, activation = "relu") %>% 
+  layer_dense(units = ncol(flatFront))
+
+modelFront2 %>% compile(
+  loss = "mse", 
+  optimizer = "adam"
+)
+
+modelFront2 %>% fit(x = flatFront, 
+                   y = flatFront, 
+                   epochs = 25, 
+                   batch_size = 128, 
+                   validation_split = 0.2, 
+                   verbose = 0)
+
+intermediateLayerFront = keras_model(inputs = modelFront$input, 
+                                     outputs = get_layer(modelFront, "bottleneck")$output)
+
+intermediateOutputFront = predict(intermediateLayerFront, flatFront)
+
+autoEncFrontKmeans = kmeans(intermediateOutputFront, centers = 3)
+
+AutoEncFrontDF = data.frame("clusters" = autoEncFrontKmeans$cluster-1, "cdr" = patientInfo$cdr)
+
+
+
+kmeans3AEFront = kable(table(AutoEncFrontDF), format = "latex", 
+                   col.names = c("Cluster", "CDR = 0", "CDR = 0.5", "CDR = 1"),
+                   booktabs = TRUE)
+
+autoEncFrontKmeans2 = kmeans(intermediateOutputFront, centers = 2)
+
+AutoEncFrontDF2 = data.frame("clusters" = autoEncFrontKmeans2$cluster-1, "cdr" = patientInfo$cdr)
+kmeans2AEFront = kable(table(AutoEncFrontDF2), format = "latex", 
+                   col.names = c("Cluster", "CDR = 0", "CDR = 0.5", "CDR = 1"),
+                   booktabs = TRUE)
+
+optFrontAE = optics(intermediateOutputFront, minPts = 50)
+png("AEFrontReachability.png")
+plot(optFrontAE, main = "Reachbility plot for Auto Encoder with Front MRI Scans DBScan")
+dev.off()
+
+dbscanFrontAE = extractDBSCAN(optFrontAE, eps_cl = 0.0005)
+AEFrontDBScanDF = data.frame("clusters" = dbscanFrontAE$cluster, "cdr" = patientInfo$cdr)
+DBScanAEFront = kable(table(AEFrontDBScanDF), format = "latex", 
+                   col.names = c("Cluster", "CDR = 0", "CDR = 0.5", "CDR = 1"),
+                   booktabs = TRUE)
+
+AEFrontTable = c(
+  "\\begin{table}[h] \\centering",
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeans3AEFront,        # KMeans Clustering with 3 Clusters
+  "\\caption{Kmeans Clustering with 3 Clusters for AutoEncoder on Front MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeans2AEFront,        # KMeans Clustering with 2 Clusters
+  "\\caption{Kmeans Clustering with 2 Clusters for AutoEncoder on Front MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  DBScanAEFront,        # DBScan Clustering
+  "\\caption{DBScan Clustering for AutoEncoder on Front MRI Scans}",
+  "\\end{minipage}",
+  "\\end{table}"
+)
+
+writeLines(AEFrontTable, "AEFront.tex")
+```
+
+\input{AEFront.tex}
+
+## 5.5: Auto Encoder on Top MRI Scans
+```{r topAutoEncoder, echo = FALSE, fig.height=4, fig.width=4, results='asis'}
+# Auto Encoder for Top Scans
+set.seed(56)
+modelTop = keras_model_sequential() %>% 
+  layer_dense(units = 2056, activation = "linear", input_shape = ncol(flatTop)) %>% 
+  layer_dense(units = 1024, activation = "sigmoid") %>% 
+  layer_dense(units = 128, activation = "sigmoid", name = "bottleneck") %>% 
+  layer_dense(units = 1024, activation = "sigmoid") %>% 
+  layer_dense(units = 2056, activation = "linear") %>% 
+  layer_dense(units = ncol(flatTop))
+
+modelTop %>% compile(
+  loss = "mse", 
+  optimizer = "adam"
+)
+
+modelTop %>% fit(x = flatTop, 
+                   y = flatTop, 
+                   epochs = 25, 
+                   batch_size = 128, 
+                   validation_split = 0.2, 
+                   verbose = 0)
+
+modelTop2 = keras_model_sequential() %>% 
+  layer_dense(units = 2056, activation = "relu", input_shape = ncol(flatTop)) %>% 
+  layer_dense(units = 1024, activation = "relu") %>% 
+  layer_dense(units = 128, activation = "relu", name = "bottleneck") %>% 
+  layer_dense(units = 1024, activation = "relu") %>% 
+  layer_dense(units = 2056, activation = "relu") %>% 
+  layer_dense(units = ncol(flatTop))
+
+modelTop2 %>% compile(
+  loss = "mse", 
+  optimizer = "adam"
+)
+
+modelTop2 %>% fit(x = flatTop, 
+                 y = flatTop, 
+                 epochs = 25, 
+                 batch_size = 128, 
+                 validation_split = 0.2, 
+                 verbose = 0)
+
+intermediateLayerTop = keras_model(inputs = modelTop$input, 
+                                     outputs = get_layer(modelTop, "bottleneck")$output)
+
+intermediateOutputTop = predict(intermediateLayerTop, flatTop)
+
+autoEncTopKmeans = kmeans(intermediateOutputTop, centers = 3)
+
+AutoEncTopDF = data.frame("clusters" = autoEncTopKmeans$cluster-1, "cdr" = patientInfo$cdr)
+kmeans3AETop = kable(table(AutoEncTopDF), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+autoEncTopKmeans2 = kmeans(intermediateOutputTop, centers = 2)
+
+AutoEncTopDF2 = data.frame("clusters" = autoEncTopKmeans2$cluster-1, "cdr" = patientInfo$cdr)
+kmeans2AETop = kable(table(AutoEncTopDF2), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+optTopAE = optics(intermediateOutputTop, minPts = 50)
+png("AETopReachability.png")
+plot(optTopAE, main = "Reachbility plot for Auto Encoder with Top MRI Scans DBScan")
+dev.off()
+dbscanTopAE = extractDBSCAN(optTopAE, eps_cl = 0.0004)
+AETopDBScanDF = data.frame("clusters" = dbscanTopAE$cluster, "cdr" = patientInfo$cdr)
+DBScanAETop = kable(table(AETopDBScanDF), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+AETopTable = c(
+  "\\begin{table}[h] \\centering",
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeans3AETop,        # KMeans Clustering with 3 Clusters
+  "\\caption{Kmeans Clustering with 3 Clusters for AutoEncoder on Top MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeans2AETop,        # KMeans Clustering with 2 Clusters
+  "\\caption{Kmeans Clustering with 2 Clusters for AutoEncoder on Top MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  DBScanAETop,        # DBScan Clustering
+  "\\caption{DBScan Clustering for AutoEncoder on Top MRI Scans}",
+  "\\end{minipage}",
+  "\\end{table}"
+)
+
+writeLines(AETopTable, "AETopTable.tex")
+```
+
+\input{AETopTable.tex}
+
+## 5.6: Auto Encoder on Side MRI Scans
+```{r sideAutoEncoder, echo = FALSE, fig.height=4, fig.width=4, results='asis' }
+# Auto Encoder for Side Scans
+set.seed(56)
+modelSide = keras_model_sequential() %>% 
+  layer_dense(units = 2056, activation = "linear", input_shape = ncol(flatSide)) %>% 
+  layer_dense(units = 1024, activation = "sigmoid") %>% 
+  layer_dense(units = 128, activation = "sigmoid", name = "bottleneck") %>% 
+  layer_dense(units = 1024, activation = "sigmoid") %>% 
+  layer_dense(units = 2056, activation = "linear") %>% 
+  layer_dense(units = ncol(flatSide))
+
+modelSide %>% compile(
+  loss = "mse", 
+  optimizer = "adam"
+)
+
+modelSide %>% fit(x = flatSide, 
+                   y = flatSide, 
+                   epochs = 25, 
+                   batch_size = 128, 
+                   validation_split = 0.2, 
+                   verbose = 0)
+
+
+modelSide2 = keras_model_sequential() %>% 
+  layer_dense(units = 2056, activation = "relu", input_shape = ncol(flatSide)) %>% 
+  layer_dense(units = 1024, activation = "relu") %>% 
+  layer_dense(units = 128, activation = "relu", name = "bottleneck") %>% 
+  layer_dense(units = 1024, activation = "relu") %>% 
+  layer_dense(units = 2056, activation = "relu") %>% 
+  layer_dense(units = ncol(flatSide))
+
+modelSide2 %>% compile(
+  loss = "mse", 
+  optimizer = "adam"
+)
+
+modelSide2 %>% fit(x = flatSide, 
+                  y = flatSide, 
+                  epochs = 25, 
+                  batch_size = 128, 
+                  validation_split = 0.2, 
+                  verbose = 0)
+
+intermediateLayerSide = keras_model(inputs = modelSide$input, 
+                                     outputs = get_layer(modelSide, "bottleneck")$output)
+
+intermediateOutputSide = predict(intermediateLayerSide, flatSide)
+
+autoEncKSidemeans = kmeans(intermediateOutputSide, centers = 3)
+
+AutoEncSideDF = data.frame("clusters" = autoEncKSidemeans$cluster-1, "cdr" = patientInfo$cdr)
+kmeans3AESide = kable(table(AutoEncSideDF), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+autoEncKSidemeans2 = kmeans(intermediateOutputSide, centers = 2)
+
+AutoEncSideDF2 = data.frame("clusters" = autoEncKSidemeans2$cluster-1, "cdr" = patientInfo$cdr)
+kmeans2AESide = kable(table(AutoEncSideDF2), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+optSideAE = optics(intermediateOutputSide, minPts = 50)
+png("AESideReachability.png")
+plot(optSideAE, main = "Reachbility plot for Auto Encoder with Side MRI Scans DBScan")
+dev.off()
+dbscanSideAE = extractDBSCAN(optSideAE, eps_cl = 0.0006)
+AESideDBScanDF = data.frame("clusters" = dbscanSideAE$cluster, "cdr" = patientInfo$cdr)
+DBScanAESide = kable(table(AESideDBScanDF), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+AESideTable = c(
+  "\\begin{table}[h] \\centering",
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeans3AESide,        # KMeans Clustering with 3 Clusters
+  "\\caption{Kmeans Clustering with 3 Clusters for AutoEncoder on Side MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeans2AESide,        # KMeans Clustering with 2 Clusters
+  "\\caption{Kmeans Clustering with 2 Clusters for AutoEncoder on Side MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  DBScanAESide,        # DBScan Clustering
+  "\\caption{DBScan Clustering for AutoEncoder on Side MRI Scans}",
+  "\\end{minipage}",
+  "\\end{table}"
+)
+
+writeLines(AESideTable, "AESideTable.tex")
+
+```
+
+\input{AESideTable.tex}
+
+Can see the same result as with LLE for Auto Encoders. The Auto Encoder does not appear to be able to learn the patterns of the brain at a sufficiently low level and so the cluster assignments do not show any patterns. 
+
+Some clusters do show slightly more promise, from table 18 we can see that the majority of CDR = 0 belongs to cluster 1 while the majority of CDR = 0.5 and CDR = 1 belongs to cluster 0 while cluster 2 seems to have captured outliers. Table 15 also shows a similar result, but not as strongly.
+
+Sigmoid with linear and relu were the 2 models that provided the lowest MSE and thus those were chosen. The bottleneck being 128 was chosen for computational efficiency as well as it being commonly used size for images when being reduced. 
+
+## 5.7: CAE on Front MRI Scans
+
+```{r convolutionFront, echo = FALSE, fig.height=4, fig.width=4, results='asis'}
+# Convolution for Front Scan
+set.seed(56)
+numImages = nrow(flatFront)
+imgFrontHeight = dim(pixelsMatrix$image_0001_front)[1]
+imgFrontWidth = dim(pixelsMatrix$image_0001_front)[2]
+
+flatFrontReshaped = array(flatFront, dim = c(numImages, imgFrontHeight, imgFrontWidth, 1))
+flatFrontReshaped = aperm(flatFrontReshaped, c(1, 3, 2, 4), resize = FALSE)
+
+modelConvFront = keras_model_sequential() %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "linear", padding = "same", 
+                input_shape = c(imgFrontHeight, imgFrontWidth, 1)) %>%
+  layer_max_pooling_2d(pool_size = c(2, 2), padding = "same") %>%
+  
+  layer_conv_2d(filters = 16, kernel_size = c(3, 3), activation = "relu", padding = "same") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2), padding = "same") %>%
+  
+  layer_conv_2d(filters = 4, kernel_size = c(2, 2), activation = "relu", padding = "same") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2), padding = "same", name = "bottleneck") %>%
+  
+  # Decoder
+  layer_conv_2d(filters = 4, kernel_size = c(2, 2), activation = "relu", padding = "same") %>%
+  layer_upsampling_2d(size = c(2, 2)) %>%
+  
+  layer_conv_2d(filters = 16, kernel_size = c(3, 3), activation = "relu", padding = "same") %>%
+  layer_upsampling_2d(size = c(2, 2)) %>%
+  
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "linear", padding = "same") %>%
+  layer_upsampling_2d(size = c(2, 2)) %>%
+  
+  layer_conv_2d(filters = 1, kernel_size = c(3, 3), activation = "linear", padding = "same")
+
+  
+  
+modelConvFront %>% compile(
+  loss = "mse", 
+  optimizer = "adam"
+  )
+
+modelConvFront %>% fit(x = flatFrontReshaped,
+                   y = flatFrontReshaped,
+                   epochs = 50,
+                   batch_size = 16,
+                   validation_split = 0.2,
+                   verbose = 0)
+
+mseFConv = evaluate(modelConvFront, flatFrontReshaped, flatFrontReshaped)
+mseFConv
+
+intermediateLayerFrontConv = keras_model(inputs = modelConvFront$input,
+                                     outputs = get_layer(modelConvFront, "bottleneck")$output)
+
+intermediateOutputFrontConv = predict(intermediateLayerFrontConv, flatFrontReshaped)
+
+
+bottleneckFlat = array_reshape(intermediateOutputFrontConv, c(dim(intermediateOutputFrontConv)[1], -1))
+
+kmeansFrontConv = kmeans(bottleneckFlat, centers = 3)
+
+convFrontDFClust = data.frame("cluster" = kmeansFrontConv$cluster-1, "cdr" = patientInfo$cdr)
+
+kmeans3ConvFront = kable(table(convFrontDFClust), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+kmeansFrontConv2 = kmeans(bottleneckFlat, centers = 2)
+
+convFrontDFClust2 = data.frame("cluster" = kmeansFrontConv2$cluster-1, "cdr" = patientInfo$cdr)
+
+kmeans2ConvFront = kable(table(convFrontDFClust2), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+optFrontConv = optics(bottleneckFlat, minPts = 50)
+png("ConvFrontReachability.png")
+plot(optFrontConv, main = "Reachbility plot for Convolutional Auto Encoder with Front MRI Scans DBScan")
+dev.off()
+dbscanFrontConv = extractDBSCAN(optFrontConv, eps_cl = 2.2)
+ConvFrontDBScanDF = data.frame("clusters" = dbscanFrontConv$cluster, "cdr" = patientInfo$cdr)
+DBScanConvFront = kable(table(ConvFrontDBScanDF), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+ConvFrontTable = c(
+  "\\begin{table}[h] \\centering",
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeans3ConvFront,        # KMeans Clustering with 3 Clusters
+  "\\caption{Kmeans Clustering with 3 Clusters for CAE on Front MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeans2ConvFront,        # KMeans Clustering with 2 Clusters
+  "\\caption{Kmeans Clustering with 2 Clusters for CAE on Front MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  DBScanConvFront,        # DBScan Clustering
+  "\\caption{DBScan Clustering for CAE on Front MRI Scans}",
+  "\\end{minipage}",
+  "\\end{table}"
+)
+
+writeLines(ConvFrontTable, "ConvFrontTable.tex")
+```
+
+\input{ConvFrontTable.tex}
+
+## 5.8: CAE on Top MRI Scans
+```{r convTopScan, echo = FALSE, fig.height=4, fig.width=4, results='asis'}
+# Convolution for Top Scan
+set.seed(56)
+numImages = nrow(flatTop)
+imgTopHeight = dim(pixelsMatrix$image_0001_top)[1]
+imgTopWidth = dim(pixelsMatrix$image_0001_top)[2]
+
+flatTopReshaped = array(flatTop, dim = c(numImages, imgTopHeight, imgTopWidth, 1))
+# flatTopReshaped = aperm(flatTopReshaped, c(1, 3, 2, 4), resize = FALSE)
+
+modelConvTop = keras_model_sequential() %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "linear", padding = "same", 
+                input_shape = c(imgTopHeight, imgTopWidth, 1)) %>%
+  layer_max_pooling_2d(pool_size = c(2, 2), padding = "same") %>%
+  
+  layer_conv_2d(filters = 16, kernel_size = c(3, 3), activation = "relu", padding = "same") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2), padding = "same") %>%
+  
+  layer_conv_2d(filters = 4, kernel_size = c(2, 2), activation = "relu", padding = "same") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2), padding = "same", name = "bottleneck") %>%
+  
+  # Decoder
+  layer_conv_2d(filters = 4, kernel_size = c(2, 2), activation = "relu", padding = "same") %>%
+  layer_upsampling_2d(size = c(2, 2)) %>%
+  
+  layer_conv_2d(filters = 16, kernel_size = c(3, 3), activation = "relu", padding = "same") %>%
+  layer_upsampling_2d(size = c(2, 2)) %>%
+  
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "linear", padding = "same") %>%
+  layer_upsampling_2d(size = c(2, 2)) %>%
+  
+  layer_conv_2d(filters = 1, kernel_size = c(3, 3), activation = "linear", padding = "same")
+
+
+
+modelConvTop %>% compile(
+  loss = "mse", 
+  optimizer = "adam"
+)
+
+modelConvTop %>% fit(x = flatTopReshaped,
+                  y = flatTopReshaped,
+                  epochs = 50,
+                  batch_size = 16,
+                  validation_split = 0.2,
+                  verbose = 0)
+
+mseTopConv = evaluate(modelConvTop, flatTopReshaped, flatTopReshaped)
+mseTopConv
+
+intermediateLayerTopConv = keras_model(inputs = modelConvTop$input,
+                                         outputs = get_layer(modelConvTop, "bottleneck")$output)
+
+intermediateOutputTopConv = predict(intermediateLayerTopConv, flatTopReshaped)
+
+
+bottleneckTopFlat = array_reshape(intermediateOutputTopConv, c(dim(intermediateOutputTopConv)[1], -1))
+
+kmeansTopConv = kmeans(bottleneckTopFlat, centers = 3)
+
+convTopDFClust = data.frame("cluster" = kmeansTopConv$cluster-1, "cdr" = patientInfo$cdr)
+
+kmeans3ConvTop = kable(table(convTopDFClust), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+kmeansTopConv2 = kmeans(bottleneckTopFlat, centers = 2)
+
+convTopDFClust2 = data.frame("cluster" = kmeansTopConv2$cluster-1, "cdr" = patientInfo$cdr)
+
+kmeans2ConvTop = kable(table(convTopDFClust2), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+optTopConv = optics(bottleneckTopFlat, minPts = 50)
+png("ConvTopReachability.png")
+plot(optTopConv, main = "Reachbility plot for Convolutional Auto Encoder with Top MRI Scans DBScan")
+dev.off()
+dbscanTopConv = extractDBSCAN(optTopConv, eps_cl = 2.7)
+ConvTopDBScanDF = data.frame("clusters" = dbscanTopConv$cluster, "cdr" = patientInfo$cdr)
+DBScanConvTop = kable(table(ConvTopDBScanDF), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+ConvTopTable = c(
+  "\\begin{table}[h] \\centering",
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeans3ConvTop,        # KMeans Clustering with 3 Clusters
+  "\\caption{Kmeans Clustering with 3 Clusters for CAE on Top MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeans2ConvTop,        # KMeans Clustering with 2 Clusters
+  "\\caption{Kmeans Clustering with 2 Clusters for CAE on Top MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  DBScanConvTop,        # DBScan Clustering
+  "\\caption{DBScan Clustering for CAE on Top MRI Scans}",
+  "\\end{minipage}",
+  "\\end{table}"
+)
+
+writeLines(ConvTopTable, "ConvTopTable.tex")
+```
+
+\input{ConvTopTable.tex}
+
+## 5.9: CAE on Side MRI Scans
+```{r convSideScan, echo = FALSE, fig.height=4, fig.width=4, results='asis'}
+# Convolution for Side Scan
+set.seed(56)
+numImages = nrow(flatSide)
+imgSideHeight = dim(pixelsMatrix$image_0001_side)[1]
+imgSideWidth = dim(pixelsMatrix$image_0001_side)[2]
+
+sideMatrix = matrix(flatSide, nrow = numImages, byrow = FALSE)
+
+flatSideReshaped = array(sideMatrix, dim = c(numImages, imgSideHeight, imgSideWidth, 1))
+flatSideReshaped = aperm(flatSideReshaped, c(1, 3, 2, 4))
+
+# identical(t(flatSideReshaped[1,,,]), pixelsMatrix$image_0001_side)
+
+modelConvSide = keras_model_sequential() %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "linear", padding = "same", 
+                input_shape = c(imgSideWidth, imgSideHeight, 1)) %>%
+  layer_max_pooling_2d(pool_size = c(2, 2), padding = "same") %>%
+  
+  layer_conv_2d(filters = 16, kernel_size = c(3, 3), activation = "relu", padding = "same") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2), padding = "same") %>%
+  
+  layer_conv_2d(filters = 4, kernel_size = c(2, 2), activation = "relu", padding = "same") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2), padding = "same", name = "bottleneck") %>%
+  
+  # Decoder
+  layer_conv_2d(filters = 4, kernel_size = c(2, 2), activation = "relu", padding = "same") %>%
+  layer_upsampling_2d(size = c(2, 2)) %>%
+  
+  layer_conv_2d(filters = 16, kernel_size = c(3, 3), activation = "relu", padding = "same") %>%
+  layer_upsampling_2d(size = c(2, 2)) %>%
+  
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "linear", padding = "same") %>%
+  layer_upsampling_2d(size = c(2, 2)) %>%
+  
+  layer_conv_2d(filters = 1, kernel_size = c(3, 3), activation = "linear", padding = "same")
+
+
+
+modelConvSide %>% compile(
+  loss = "mse", 
+  optimizer = "adam"
+)
+
+modelConvSide %>% fit(x = flatSideReshaped,
+                  y = flatSideReshaped,
+                  epochs = 50,
+                  batch_size = 16,
+                  validation_split = 0.2,
+                  verbose = 0)
+
+mseSideConv = evaluate(modelConvSide, flatSideReshaped, flatSideReshaped)
+mseSideConv
+
+intermediateLayerSideConv = keras_model(inputs = modelConvSide$input,
+                                         outputs = get_layer(modelConvSide, "bottleneck")$output)
+
+intermediateOutputSideConv = predict(intermediateLayerSideConv, flatSideReshaped)
+
+
+bottleneckSide = array_reshape(intermediateOutputSideConv, c(dim(intermediateOutputSideConv)[1], -1))
+
+kmeansSideConv = kmeans(bottleneckSide, centers = 3)
+
+convSideDFClust = data.frame("cluster" = kmeansSideConv$cluster-1, "cdr" = patientInfo$cdr)
+
+
+kmeans3ConvSide = kable(table(convSideDFClust), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+kmeansSideConv2 = kmeans(bottleneckSide, centers = 2)
+
+convSideDFClust2 = data.frame("cluster" = kmeansSideConv2$cluster-1, "cdr" = patientInfo$cdr)
+
+
+kmeans2ConvSide = kable(table(convSideDFClust2), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"), 
+                   booktabs = TRUE)
+
+optSideConv = optics(bottleneckSide, minPts = 50)
+png("ConvSideReachability.png")
+plot(optSideConv, main = "Reachbility plot for Convolutional Auto Encoder with Side MRI Scans DBScan")
+dev.off()
+dbscanSideConv = extractDBSCAN(optSideConv, eps_cl = 4.5)
+ConvSideDBScanDF = data.frame("clusters" = dbscanSideConv$cluster, "cdr" = patientInfo$cdr)
+DBScanConvSide = kable(table(ConvSideDBScanDF), format = "latex", 
+                   col.names = c("Cluster","CDR = 0", "CDR = 0.5", "CDR = 1"),
+                   booktabs = TRUE)
+
+ConvSideTable = c(
+  "\\begin{table}[h] \\centering",
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeans3ConvSide,        # KMeans Clustering with 3 Clusters
+  "\\caption{Kmeans Clustering with 3 Clusters for CAE on Side MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  kmeans2ConvSide,        # KMeans Clustering with 2 Clusters
+  "\\caption{Kmeans Clustering with 2 Clusters for CAE on Side MRI Scans}",
+  "\\end{minipage}",
+  "\\hspace{3cm}",    # Space between tables
+  "\\begin{minipage}{0.3\\textwidth}",
+  DBScanConvSide,        # DBScan Clustering
+  "\\caption{DBScan Clustering for CAE on Side MRI Scans}",
+  "\\end{minipage}",
+  "\\end{table}"
+)
+writeLines(ConvSideTable, "ConvSideTable.tex")
+
+```
+
+\input{ConvSideTable.tex}
+
+The CAE does not provide much better results, with no pattern identifiable. Similar to the LLE, there seems to be random splitting of observations between clusters with some clusters taking the majority. 
+
+The CAE used 32, 16 and then 4 filters. This was due to wanting to capture the most amount of data when it was high level and then gradually reduce the filtering at lower levels of information in order to keep what is most important. Using linear and Relu in combination was tested to give the best results. 
+
+Overall, we can see that neither K-Means nor DBScan were able to identify any distinct clusters of groupings of CDR levels. DBScan however consistently predicted there being 2 clusters which might mean that it is not possible to make a distinction between CDR = 0.5 and CDR = 1. 
+
+
+# 6: Conclusion
+
+From the results, the methods used in this report were unable to confidently detect differences in brain structure for Alzheimers and non-Alzheimers patients. However, much of this may be due to the low amount of data as well as the inability to train sufficiently deep models. Convolution models have been the most successful in being able to predict Alzheimers, but it would need more layers and more data in order to fully train it such that the bottleneck would give enough information to predict Alzheimers patients. 
+
+Areas for further research would be the use of Support Vector Machines in MRI structural analysis, as these models have also performed well in previous research, as well as the use of more deep convolutional models with sufficient data to train. Gaussian Mixture Models may also perform better than both K-Means and DBScan due to the ability to work well with non spherical clusters and allowing different points to belong to multiple clusters based on probability which is useful for regions of the brain where there is a gradual change between pixels. 
+
+\newpage
+# References
+
+Alzheimer's Association. 2024. *2024 Alzheimer’s disease facts and figures*. Available:<https://www.alz.org/getmedia/76e51bb6-c003-4d84-8019-e0779d8c4e8d/alzheimers-facts-and-figures.pdf>. [2024, 7 March]
+
+Frisoni G., Fox N., Jack C Jr., Scheltens P., Thompson P. 2010. *The clinical use of structural MRI in Alzheimer disease*. Nat Rev Neurol. 6(2):67-77. doi: 10.1038/nrneurol.2009.215.
+
+Marcus, D, Wang T, Parker J., Csernasky J., Morris J., Buckner R.2007. *Open Accesss Series of Imaging Studies (OASIS): Cross-Sectional MRI Data in Young Middle Aged, Nondemented, and Demented Older Adults*. Journal of Cognitive Neuroscience, 19, 1498 - 1507. doi: 10.1162/jocn.2007.19.9.1498.
+
+
+
+\newpage
+# Appendix 
+```{r autoEncoderNetwork, echo = FALSE, fig.show = "hold", fig.align = "center", out.height="500%", out.width="50%", fig.cap = "AutoEncoder Network Design"}
+knitr::include_graphics(c("F:/.University/5th Year/STA5069Z/SBRMIC008_STA5069Z_Project/Report/AutoEncoderNetwork.png"))
+```
